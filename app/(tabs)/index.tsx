@@ -1,40 +1,109 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
+import {
+  getApiErrorMessage,
+  historicoService,
+  resumoFinanceiroService,
+  type Historico,
+  type ResumoFinanceiro,
+} from '@/services/api';
+import { session } from '@/services/session';
+
+const formatCurrency = (value: number) =>
+  `R$ ${value.toLocaleString('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 
 export default function HomeScreen() {
   const router = useRouter();
+  const [summary, setSummary] = useState<ResumoFinanceiro>({
+    voceDeve: 0,
+    teDevem: 0,
+    saldoLiquido: 0,
+  });
+  const [historicos, setHistoricos] = useState<Historico[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const loadDashboard = useCallback(async () => {
+    setLoading(true);
+    try {
+      const residencia = session.getResidencia();
+      const user = session.getUser();
+      const historicosData = await historicoService.list();
+
+      if (residencia && user) {
+        const resumo = await resumoFinanceiroService.get(user.id, residencia.id);
+        setSummary(resumo);
+      } else {
+        setSummary({
+          voceDeve: 0,
+          teDevem: 0,
+          saldoLiquido: 0,
+        });
+      }
+
+      setHistoricos(
+        residencia
+          ? historicosData.filter(item => item.residenciaId === residencia.id)
+          : historicosData,
+      );
+    } catch (error: any) {
+      Alert.alert('Erro', getApiErrorMessage(error, 'Nao foi possivel carregar o resumo.'));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadDashboard();
+    }, [loadDashboard]),
+  );
+
+  const recentActivities = historicos.slice(0, 3);
+  const saldoColor =
+    summary.saldoLiquido > 0
+      ? styles.balancePositive
+      : summary.saldoLiquido < 0
+        ? styles.balanceNegative
+        : styles.balanceNeutral;
+  const saldoPrefix =
+    summary.saldoLiquido > 0 ? '+ ' : summary.saldoLiquido < 0 ? '- ' : '';
 
   return (
     <ScrollView style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>🏠 DivMorada</Text>
+        <Text style={styles.headerTitle}>Casa DivMorada</Text>
       </View>
 
-      {/* Card de Saldo */}
       <View style={styles.balanceCard}>
-        <Text style={styles.balanceLabel}>Seu Saldo Líquido</Text>
-        <Text style={styles.balanceValue}>+ R$ 250,50</Text>
+        <Text style={styles.balanceLabel}>Seu Saldo Liquido</Text>
+        <Text style={[
+          styles.balanceValue,
+          saldoColor,
+        ]}>
+          {saldoPrefix}
+          {formatCurrency(Math.abs(summary.saldoLiquido))}
+        </Text>
         <View style={styles.divider} />
         <View style={styles.row}>
           <View style={styles.infoBox}>
             <View style={[styles.dot, { backgroundColor: '#ff4d4d' }]} />
-            <Text style={styles.subValue}>- R$ 120,00</Text>
-            <Text style={styles.subLabel}>Você deve</Text>
+            <Text style={styles.subValue}>- {formatCurrency(summary.voceDeve)}</Text>
+            <Text style={styles.subLabel}>Voce deve</Text>
           </View>
           <View style={styles.infoBox}>
             <View style={[styles.dot, { backgroundColor: '#2ecc71' }]} />
-            <Text style={styles.subValue}>+ R$ 370,50</Text>
+            <Text style={styles.subValue}>+ {formatCurrency(summary.teDevem)}</Text>
             <Text style={styles.subLabel}>Te devem</Text>
           </View>
         </View>
       </View>
 
-      {/* Botões de Ação */}
       <View style={styles.buttonRow}>
-        {/* Quem Me Deve → ReceivablesScreen */}
         <TouchableOpacity
           style={[styles.actionButton, { backgroundColor: '#2ecc71' }]}
           onPress={() => router.push('/receivables')}
@@ -43,7 +112,6 @@ export default function HomeScreen() {
           <Text style={styles.buttonText}>Quem Me Deve</Text>
         </TouchableOpacity>
 
-        {/* A Pagar → DebtorsScreen */}
         <TouchableOpacity
           style={[styles.actionButton, { backgroundColor: '#e74c3c' }]}
           onPress={() => router.push('/debtors')}
@@ -53,18 +121,23 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Atividades Recentes */}
       <View style={styles.activitySection}>
         <Text style={styles.sectionTitle}>Atividades Recentes</Text>
-        <View style={styles.activityItem}>
-          <View style={[styles.iconCircle, { backgroundColor: '#5D6D7E' }]}>
-            <MaterialCommunityIcons name="wifi" size={24} color="white" />
+        {loading && <Text style={styles.emptyText}>Carregando atividades...</Text>}
+        {!loading && recentActivities.length === 0 && (
+          <Text style={styles.emptyText}>Nenhuma atividade recente.</Text>
+        )}
+        {recentActivities.map(item => (
+          <View key={item.id} style={styles.activityItem}>
+            <View style={[styles.iconCircle, { backgroundColor: '#5D6D7E' }]}>
+              <MaterialCommunityIcons name="history" size={24} color="white" />
+            </View>
+            <View>
+              <Text style={styles.activityText}>{item.acao}</Text>
+              <Text style={styles.activitySubtext}>{item.descricao || 'Sem descricao'}</Text>
+            </View>
           </View>
-          <View>
-            <Text style={styles.activityText}>Internet (João pagou)</Text>
-            <Text style={styles.activitySubtext}>Sua parte: -R$ 45,00</Text>
-          </View>
-        </View>
+        ))}
       </View>
     </ScrollView>
   );
@@ -86,7 +159,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
   },
   balanceLabel: { color: '#7f8c8d', fontSize: 16 },
-  balanceValue: { fontSize: 32, fontWeight: 'bold', color: '#1abc9c', marginVertical: 10 },
+  balanceValue: { fontSize: 32, fontWeight: 'bold', marginVertical: 10 },
+  balancePositive: { color: '#1abc9c' },
+  balanceNegative: { color: '#e74c3c' },
+  balanceNeutral: { color: '#7f8c8d' },
   divider: { height: 1, backgroundColor: '#ecf0f1', width: '100%', marginVertical: 15 },
   row: { flexDirection: 'row', justifyContent: 'space-around', width: '100%' },
   infoBox: { alignItems: 'center' },
@@ -112,4 +188,5 @@ const styles = StyleSheet.create({
   iconCircle: { width: 45, height: 45, borderRadius: 22.5, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
   activityText: { fontSize: 16, fontWeight: '600' },
   activitySubtext: { color: '#7f8c8d' },
+  emptyText: { color: '#7f8c8d' },
 });

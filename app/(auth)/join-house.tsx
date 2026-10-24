@@ -1,9 +1,17 @@
-// app/(auth)/join-house.tsx
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import {
+  residenciaService,
+  residenciaUsuarioService,
+  getApiErrorMessage,
+  type Residencia,
+} from '@/services/api';
+import { session } from '@/services/session';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-  Alert, KeyboardAvoidingView, Platform,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -17,28 +25,78 @@ type Tab = 'join' | 'create';
 
 export default function JoinHouseScreen() {
   const router = useRouter();
-  const [tab, setTab]           = useState<Tab>('join');
-  const [code, setCode]         = useState('');
+  const [tab, setTab] = useState<Tab>('join');
+  const [code, setCode] = useState('');
   const [houseName, setHouseName] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleJoin = () => {
+  const handleJoin = async () => {
     if (!code.trim()) {
-      Alert.alert('Atenção', 'Digite o código de convite da casa.');
+      Alert.alert('Atencao', 'Digite o codigo de convite da casa.');
       return;
     }
-    Alert.alert('Solicitação enviada!', `Pedido para entrar na casa com código "${code.toUpperCase()}" enviado. Aguarde o administrador confirmar.`, [
-      { text: 'OK', onPress: () => router.replace('/(tabs)') },
-    ]);
+
+    const user = session.getUser();
+    if (!user) {
+      router.replace('/login');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const residencia = await residenciaService.getByCodigo(code.trim().toUpperCase());
+      await residenciaUsuarioService.create(residencia.id, user.id, 'membro');
+      session.setResidencia(residencia);
+      Alert.alert('Casa encontrada!', `Voce entrou em "${residencia.nome}".`, [
+        { text: 'OK', onPress: () => router.replace('/(tabs)') },
+      ]);
+    } catch (error: any) {
+      Alert.alert(
+        'Erro ao entrar na casa',
+        getApiErrorMessage(error, 'Nao foi possivel entrar nessa casa.'),
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!houseName.trim()) {
-      Alert.alert('Atenção', 'Digite um nome para a sua casa.');
+      Alert.alert('Atencao', 'Digite um nome para a sua casa.');
       return;
     }
-    Alert.alert('Casa criada!', `"${houseName}" foi criada com sucesso! Compartilhe o código de convite com os moradores.`, [
-      { text: 'OK', onPress: () => router.replace('/(tabs)') },
-    ]);
+
+    const user = session.getUser();
+    if (!user) {
+      router.replace('/login');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await residenciaService.create(houseName.trim());
+      const residencias = await residenciaService.list();
+      const residencia = residencias
+        .filter(item => item.nome === houseName.trim())
+        .sort((a, b) => new Date(b.createdAt ?? '').getTime() - new Date(a.createdAt ?? '').getTime())[0] as Residencia | undefined;
+
+      if (!residencia) {
+        throw new Error('Residencia criada, mas nao encontrada na listagem.');
+      }
+
+      await residenciaUsuarioService.create(residencia.id, user.id, 'dono');
+      session.setResidencia(residencia);
+      Alert.alert('Casa criada!', `"${residencia.nome}" foi criada. Codigo: ${residencia.codigo}`, [
+        { text: 'OK', onPress: () => router.replace('/(tabs)') },
+      ]);
+    } catch (error: any) {
+      Alert.alert(
+        'Erro ao criar casa',
+        getApiErrorMessage(error, error.message || 'Nao foi possivel criar a casa.'),
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -48,23 +106,19 @@ export default function JoinHouseScreen() {
         style={{ flex: 1 }}
       >
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-
-          {/* LOGO */}
           <View style={styles.logoRow}>
-            <Text style={styles.logo}>🏠 <Text style={styles.brand}>DivMorada</Text></Text>
+            <Text style={styles.logo}>Casa <Text style={styles.brand}>DivMorada</Text></Text>
           </View>
 
-          {/* ÍCONE */}
           <View style={styles.iconWrap}>
             <MaterialCommunityIcons name="home-group" size={72} color="#1abc9c" />
           </View>
 
           <Text style={styles.title}>Bem-vindo ao DivMorada!</Text>
           <Text style={styles.subtitle}>
-            Para começar, entre em uma casa existente usando o código de convite, ou crie uma nova casa para seus moradores.
+            Para comecar, entre em uma casa existente usando o codigo de convite, ou crie uma nova casa.
           </Text>
 
-          {/* ABAS */}
           <View style={styles.tabRow}>
             <TouchableOpacity
               style={[styles.tabBtn, tab === 'join' && styles.tabBtnActive]}
@@ -84,15 +138,14 @@ export default function JoinHouseScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* CONTEÚDO DA ABA */}
           {tab === 'join' ? (
             <View style={styles.card}>
               <View style={styles.cardIconRow}>
                 <MaterialCommunityIcons name="key-variant" size={28} color="#1abc9c" />
-                <Text style={styles.cardTitle}>Código de Convite</Text>
+                <Text style={styles.cardTitle}>Codigo de Convite</Text>
               </View>
               <Text style={styles.cardDesc}>
-                Peça o código ao administrador da casa e cole abaixo.
+                Peca o codigo ao administrador da casa e cole abaixo.
               </Text>
               <View style={styles.codeInputRow}>
                 <TextInput
@@ -100,13 +153,19 @@ export default function JoinHouseScreen() {
                   placeholder="Ex: R7XY39"
                   placeholderTextColor="#bbb"
                   value={code}
-                  onChangeText={t => setCode(t.toUpperCase())}
+                  onChangeText={text => setCode(text.toUpperCase())}
                   autoCapitalize="characters"
                   maxLength={8}
                 />
               </View>
-              <TouchableOpacity style={styles.btnPrimary} onPress={handleJoin}>
-                <Text style={styles.btnPrimaryText}>Entrar na Casa</Text>
+              <TouchableOpacity
+                style={[styles.btnPrimary, loading && styles.btnPrimaryDisabled]}
+                onPress={handleJoin}
+                disabled={loading}
+              >
+                <Text style={styles.btnPrimaryText}>
+                  {loading ? 'Entrando...' : 'Entrar na Casa'}
+                </Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -116,29 +175,33 @@ export default function JoinHouseScreen() {
                 <Text style={styles.cardTitle}>Nova Casa</Text>
               </View>
               <Text style={styles.cardDesc}>
-                Você será o administrador. Depois poderá convidar os moradores com um código.
+                Voce sera o administrador e podera compartilhar o codigo com os moradores.
               </Text>
               <View style={styles.inputWrap}>
                 <MaterialCommunityIcons name="home-outline" size={20} color="#aaa" style={{ marginRight: 8 }} />
                 <TextInput
                   style={styles.nameInput}
-                  placeholder="Nome da casa (ex: República Central)"
+                  placeholder="Nome da casa"
                   placeholderTextColor="#bbb"
                   value={houseName}
                   onChangeText={setHouseName}
                 />
               </View>
-              <TouchableOpacity style={styles.btnPrimary} onPress={handleCreate}>
-                <Text style={styles.btnPrimaryText}>Criar Casa 🏠</Text>
+              <TouchableOpacity
+                style={[styles.btnPrimary, loading && styles.btnPrimaryDisabled]}
+                onPress={handleCreate}
+                disabled={loading}
+              >
+                <Text style={styles.btnPrimaryText}>
+                  {loading ? 'Criando...' : 'Criar Casa'}
+                </Text>
               </TouchableOpacity>
             </View>
           )}
 
-          {/* VOLTAR */}
           <TouchableOpacity style={styles.btnBack} onPress={() => router.back()}>
-            <Text style={styles.btnBackText}>← Voltar para o Login</Text>
+            <Text style={styles.btnBackText}>Voltar para o Login</Text>
           </TouchableOpacity>
-
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -146,18 +209,17 @@ export default function JoinHouseScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe:    { flex: 1, backgroundColor: '#f4f6f5' },
+  safe: { flex: 1, backgroundColor: '#f4f6f5' },
   content: { padding: 24, paddingBottom: 48, alignItems: 'center' },
 
   logoRow: { width: '100%', marginBottom: 8 },
-  logo:    { fontSize: 22, fontWeight: 'bold', color: '#333' },
-  brand:   { color: '#1abc9c' },
+  logo: { fontSize: 22, fontWeight: 'bold', color: '#333' },
+  brand: { color: '#1abc9c' },
 
   iconWrap: { marginTop: 16, marginBottom: 16 },
-  title:    { fontSize: 22, fontWeight: 'bold', color: '#222', textAlign: 'center', marginBottom: 10 },
+  title: { fontSize: 22, fontWeight: 'bold', color: '#222', textAlign: 'center', marginBottom: 10 },
   subtitle: { fontSize: 14, color: '#777', textAlign: 'center', lineHeight: 20, marginBottom: 28, paddingHorizontal: 8 },
 
-  /* Abas */
   tabRow: {
     flexDirection: 'row', width: '100%',
     backgroundColor: '#e8f8f5', borderRadius: 12,
@@ -167,10 +229,9 @@ const styles = StyleSheet.create({
     flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center',
   },
   tabBtnActive: { backgroundColor: '#1abc9c' },
-  tabText:      { fontSize: 13, fontWeight: '600', color: '#888' },
-  tabTextActive:{ color: '#fff' },
+  tabText: { fontSize: 13, fontWeight: '600', color: '#888' },
+  tabTextActive: { color: '#fff' },
 
-  /* Card */
   card: {
     width: '100%', backgroundColor: '#fff',
     borderRadius: 16, padding: 20,
@@ -180,10 +241,9 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   cardIconRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
-  cardTitle:   { fontSize: 17, fontWeight: 'bold', color: '#222' },
-  cardDesc:    { fontSize: 13, color: '#888', lineHeight: 18, marginBottom: 18 },
+  cardTitle: { fontSize: 17, fontWeight: 'bold', color: '#222' },
+  cardDesc: { fontSize: 13, color: '#888', lineHeight: 18, marginBottom: 18 },
 
-  /* Input código */
   codeInputRow: {
     borderWidth: 2, borderColor: '#1abc9c', borderRadius: 12,
     marginBottom: 18, paddingHorizontal: 16,
@@ -193,7 +253,6 @@ const styles = StyleSheet.create({
     color: '#222', textAlign: 'center', letterSpacing: 6,
   },
 
-  /* Input nome */
   inputWrap: {
     flexDirection: 'row', alignItems: 'center',
     borderWidth: 1, borderColor: '#ddd', borderRadius: 12,
@@ -205,8 +264,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#1abc9c', borderRadius: 12,
     paddingVertical: 16, alignItems: 'center',
   },
+  btnPrimaryDisabled: { opacity: 0.7 },
   btnPrimaryText: { color: '#fff', fontWeight: 'bold', fontSize: 15 },
 
-  btnBack:     { marginTop: 8 },
+  btnBack: { marginTop: 8 },
   btnBackText: { color: '#888', fontSize: 14 },
 });

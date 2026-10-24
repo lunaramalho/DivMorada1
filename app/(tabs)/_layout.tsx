@@ -1,10 +1,15 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Tabs } from 'expo-router';
+import { Redirect, Tabs } from 'expo-router';
+import { session } from '@/services/session';
 
 const PRIMARY = '#1abc9c';
 const INACTIVE = '#95a5a6';
 
 export default function TabLayout() {
+  if (!session.getUser()) {
+    return <Redirect href="/(auth)/login" />;
+  }
+
   return (
     <Tabs
       screenOptions={{

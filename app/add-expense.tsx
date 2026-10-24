@@ -1,5 +1,5 @@
-import { useRouter } from 'expo-router';
-import React, { useMemo, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
   SafeAreaView,
@@ -10,6 +10,15 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import {
+  despesaService,
+  getApiErrorMessage,
+  residenciaUsuarioService,
+  usuarioService,
+  type ResidenciaUsuario,
+  type Usuario,
+} from '@/services/api';
+import { session } from '@/services/session';
 
 type Person = {
   id: string;
@@ -19,29 +28,87 @@ type Person = {
   avatarColor: string;
 };
 
-const PEOPLE: Person[] = [
-  { id: '1', name: 'Ana',   short: 'Ana',  avatarLetter: 'A', avatarColor: '#c0392b' },
-  { id: '2', name: 'João',  short: 'João', avatarLetter: 'J', avatarColor: '#2980b9' },
-  { id: '3', name: 'Maria', short: 'Maria',avatarLetter: 'M', avatarColor: '#1abc9c' },
-  { id: '4', name: 'Você',  short: 'You',  avatarLetter: 'Y', avatarColor: '#e67e22' },
-];
+const AVATAR_COLORS = ['#c0392b', '#2980b9', '#1abc9c', '#8e44ad', '#e67e22'];
+
+const formatCurrencyInput = (value: string) => {
+  const digits = value.replace(/\D/g, '');
+  const amount = Number(digits || '0') / 100;
+
+  if (!digits) {
+    return '';
+  }
+
+  return amount.toLocaleString('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+};
+
+const parseCurrencyInput = (value: string) => {
+  const digits = value.replace(/\D/g, '');
+  return Number(digits || '0') / 100;
+};
 
 export default function AddExpenseScreen() {
   const router = useRouter();
 
-  const [expenseName, setExpenseName]     = useState('');
-  const [totalValue, setTotalValue]       = useState('');
-  const [payerId, setPayerId]             = useState<string | null>(null);
-  const [participants, setParticipants]   = useState<string[]>([]);
+  const [people, setPeople] = useState<Person[]>([]);
+  const [expenseName, setExpenseName] = useState('');
+  const [totalValue, setTotalValue] = useState('');
+  const [payerId, setPayerId] = useState<string | null>(session.getUser()?.id ?? null);
+  const [participants, setParticipants] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const loadPeople = useCallback(async () => {
+    const residencia = session.getResidencia();
+
+    if (!residencia) {
+      setPeople([]);
+      return;
+    }
+
+    try {
+      const [moradores, usuarios] = await Promise.all([
+        residenciaUsuarioService.list(),
+        usuarioService.list(),
+      ]);
+
+      const nextPeople = moradores
+        .filter((item: ResidenciaUsuario) => item.residenciaId === residencia.id && item.ativo)
+        .map((morador, index) => {
+          const usuario = usuarios.find((item: Usuario) => item.id === morador.usuarioId);
+          const name = usuario?.nome ?? 'Morador';
+
+          return {
+            id: morador.usuarioId,
+            name,
+            short: name.split(' ')[0],
+            avatarLetter: name.trim().charAt(0).toUpperCase() || 'M',
+            avatarColor: AVATAR_COLORS[index % AVATAR_COLORS.length],
+          };
+        });
+
+      setPeople(nextPeople);
+      setParticipants(nextPeople.map(person => person.id));
+    } catch (error: any) {
+      Alert.alert('Erro', getApiErrorMessage(error, 'Nao foi possivel carregar moradores.'));
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadPeople();
+    }, [loadPeople]),
+  );
 
   const toggleParticipant = (id: string) => {
     setParticipants(prev =>
-      prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]
+      prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id],
     );
   };
 
   const valuePerPerson = useMemo(() => {
-    const total = parseFloat(totalValue.replace(',', '.'));
+    const total = parseCurrencyInput(totalValue);
     if (!total || participants.length === 0) return 0;
     return total / participants.length;
   }, [totalValue, participants]);
@@ -50,39 +117,83 @@ export default function AddExpenseScreen() {
     router.back();
   };
 
-  const handleSave = () => {
-    if (!expenseName.trim()) {
-      Alert.alert('Atenção', 'Informe o nome da despesa.');
+  const handleSave = async () => {
+    const residencia = session.getResidencia();
+    const currentUser = session.getUser();
+    const total = parseCurrencyInput(totalValue);
+
+    if (!residencia) {
+      Alert.alert('Atencao', 'Selecione ou crie uma casa antes de adicionar despesas.');
       return;
     }
-    if (!totalValue || parseFloat(totalValue.replace(',', '.')) <= 0) {
-      Alert.alert('Atenção', 'Informe o valor total.');
+    if (!expenseName.trim()) {
+      Alert.alert('Atencao', 'Informe o nome da despesa.');
+      return;
+    }
+    if (!total || total <= 0) {
+      Alert.alert('Atencao', 'Informe o valor total.');
       return;
     }
     if (!payerId) {
-      Alert.alert('Atenção', 'Selecione quem pagou.');
+      Alert.alert('Atencao', 'Selecione quem pagou.');
       return;
     }
     if (participants.length === 0) {
-      Alert.alert('Atenção', 'Selecione os participantes.');
+      Alert.alert('Atencao', 'Selecione os participantes.');
       return;
     }
 
-    Alert.alert(
-      '✅ Despesa adicionada com sucesso!',
-      `"${expenseName}" de R$ ${parseFloat(totalValue.replace(',', '.')).toFixed(2)} foi registrada e dividida entre ${participants.length} pessoa(s).`,
-      [{ text: 'OK', onPress: () => router.back() }]
-    );
+    setLoading(true);
+    try {
+      await despesaService.create({
+        residenciaId: residencia.id,
+        criadoPorId: payerId,
+        nome: expenseName.trim(),
+        descricao: `Dividida entre ${participants.length} pessoa(s).`,
+        valorTotal: total,
+        tipo: 'VARIAVEL',
+        status: 'PENDENTE',
+        participantesIds: participants,
+      });
+
+      Alert.alert(
+        'Despesa adicionada com sucesso!',
+        `"${expenseName}" de R$ ${total.toFixed(2).replace('.', ',')} foi registrada.`,
+        [{
+          text: 'OK',
+          onPress: () => {
+            if (currentUser?.id === payerId) {
+              router.replace('/receivables');
+              return;
+            }
+
+            if (currentUser && participants.includes(currentUser.id)) {
+              router.replace('/debtors');
+              return;
+            }
+
+            router.back();
+          },
+        }],
+      );
+    } catch (error: any) {
+      Alert.alert('Erro ao salvar', getApiErrorMessage(error, 'Nao foi possivel salvar a despesa.'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleChangeTotalValue = (value: string) => {
+    setTotalValue(formatCurrencyInput(value));
   };
 
   return (
     <SafeAreaView style={styles.safe}>
-      {/* HEADER */}
       <View style={styles.header}>
         <TouchableOpacity onPress={handleCancel} style={styles.backBtn}>
           <Text style={styles.backArrow}>‹</Text>
         </TouchableOpacity>
-        <Text style={styles.logo}>🏠 <Text style={styles.brand}>DivMorada</Text></Text>
+        <Text style={styles.logo}>Casa <Text style={styles.brand}>DivMorada</Text></Text>
       </View>
 
       <ScrollView
@@ -90,11 +201,10 @@ export default function AddExpenseScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* CARD DETALHES BÁSICOS */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Nova Despesa</Text>
 
-          <Text style={styles.fieldLabel}>Detalhes Básicos</Text>
+          <Text style={styles.fieldLabel}>Detalhes Basicos</Text>
           <Text style={styles.subLabel}>Nome da Despesa:</Text>
           <View style={styles.inputRow}>
             <TextInput
@@ -104,7 +214,6 @@ export default function AddExpenseScreen() {
               value={expenseName}
               onChangeText={setExpenseName}
             />
-            <Text style={styles.inputIcon}>✏️</Text>
           </View>
 
           <Text style={styles.subLabel}>Valor total (R$):</Text>
@@ -112,21 +221,20 @@ export default function AddExpenseScreen() {
             <Text style={styles.currencyLabel}>R$</Text>
             <TextInput
               style={styles.valueInput}
-              placeholder="0.00"
+              placeholder="0,00"
               placeholderTextColor="#bbb"
-              keyboardType="decimal-pad"
+              keyboardType="numeric"
               value={totalValue}
-              onChangeText={setTotalValue}
+              onChangeText={handleChangeTotalValue}
             />
           </View>
         </View>
 
-        {/* QUEM PAGOU */}
         <View style={styles.card}>
           <Text style={styles.fieldLabel}>Quem Participa e Como Divide</Text>
           <Text style={styles.subLabel}>Quem Pagou? (Selecione um)</Text>
           <View style={styles.avatarRow}>
-            {PEOPLE.map(p => (
+            {people.map(p => (
               <TouchableOpacity
                 key={p.id}
                 style={styles.avatarCol}
@@ -150,12 +258,10 @@ export default function AddExpenseScreen() {
           </View>
         </View>
 
-        {/* QUEM PARTICIPA */}
         <View style={styles.card}>
-          <Text style={styles.subLabel}>Quem Participa e Valor p/ Pessoa</Text>
           <Text style={styles.subLabel}>Quem Participa? (Selecione todos)</Text>
           <View style={styles.avatarRow}>
-            {PEOPLE.map(p => (
+            {people.map(p => (
               <TouchableOpacity
                 key={p.id}
                 style={styles.avatarCol}
@@ -178,7 +284,6 @@ export default function AddExpenseScreen() {
             ))}
           </View>
 
-          {/* RESUMO DO CÁLCULO */}
           {participants.length > 0 && valuePerPerson > 0 && (
             <View style={styles.calcBox}>
               <Text style={styles.calcTitle}>
@@ -186,7 +291,7 @@ export default function AddExpenseScreen() {
               </Text>
               <View style={styles.calcGrid}>
                 {participants.map(pid => {
-                  const person = PEOPLE.find(p => p.id === pid);
+                  const person = people.find(p => p.id === pid);
                   return (
                     <Text key={pid} style={styles.calcItem}>
                       {person?.name} (R$ {valuePerPerson.toFixed(0)})
@@ -198,33 +303,35 @@ export default function AddExpenseScreen() {
           )}
         </View>
 
-        {/* BOTÕES SALVAR + CANCELAR */}
         <View style={styles.btnRow}>
           <TouchableOpacity style={styles.btnCancel} onPress={handleCancel}>
             <Text style={styles.btnCancelText}>Cancelar</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.btnSave} onPress={handleSave}>
-            <Text style={styles.btnSaveText}>Salvar Despesa</Text>
+          <TouchableOpacity
+            style={[styles.btnSave, loading && styles.btnSaveDisabled]}
+            onPress={handleSave}
+            disabled={loading}
+          >
+            <Text style={styles.btnSaveText}>{loading ? 'Salvando...' : 'Salvar Despesa'}</Text>
           </TouchableOpacity>
         </View>
-
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: '#f4f6f5' },
+  safe: { flex: 1, backgroundColor: '#f4f6f5' },
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10,
     backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#eee',
   },
-  backBtn:   { marginRight: 10, padding: 4 },
+  backBtn: { marginRight: 10, padding: 4 },
   backArrow: { fontSize: 30, color: '#1abc9c', lineHeight: 32 },
-  logo:      { fontSize: 20, fontWeight: 'bold', color: '#333' },
-  brand:     { color: '#1abc9c' },
+  logo: { fontSize: 20, fontWeight: 'bold', color: '#333' },
+  brand: { color: '#1abc9c' },
 
   content: { padding: 16, paddingBottom: 40 },
 
@@ -234,17 +341,16 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.07, shadowRadius: 4,
   },
-  cardTitle:  { fontSize: 20, fontWeight: 'bold', color: '#222', marginBottom: 14 },
+  cardTitle: { fontSize: 20, fontWeight: 'bold', color: '#222', marginBottom: 14 },
   fieldLabel: { fontSize: 15, fontWeight: '700', color: '#333', marginBottom: 10 },
-  subLabel:   { fontSize: 13, color: '#555', marginBottom: 6, fontWeight: '600' },
+  subLabel: { fontSize: 13, color: '#555', marginBottom: 6, fontWeight: '600' },
 
   inputRow: {
     flexDirection: 'row', alignItems: 'center',
     borderWidth: 1, borderColor: '#ddd', borderRadius: 10,
     paddingHorizontal: 12, marginBottom: 14, backgroundColor: '#fafafa',
   },
-  input:     { flex: 1, height: 44, fontSize: 14, color: '#333' },
-  inputIcon: { fontSize: 16 },
+  input: { flex: 1, height: 44, fontSize: 14, color: '#333' },
 
   valueRow: {
     flexDirection: 'row', alignItems: 'center',
@@ -252,17 +358,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, height: 52, backgroundColor: '#fafafa',
   },
   currencyLabel: { fontSize: 16, fontWeight: '700', color: '#1abc9c', marginRight: 8 },
-  valueInput:    { flex: 1, fontSize: 22, fontWeight: 'bold', color: '#222' },
+  valueInput: { flex: 1, fontSize: 22, fontWeight: 'bold', color: '#222' },
 
-  avatarRow: { flexDirection: 'row', gap: 16, marginTop: 6, marginBottom: 4 },
+  avatarRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginTop: 6, marginBottom: 4 },
   avatarCol: { alignItems: 'center', gap: 6 },
   avatarCircle: {
     width: 52, height: 52, borderRadius: 26,
     alignItems: 'center', justifyContent: 'center', position: 'relative',
   },
   avatarSelected: { borderWidth: 3, borderColor: '#1abc9c' },
-  avatarLetter:   { color: '#fff', fontWeight: 'bold', fontSize: 20 },
-  avatarName:     { fontSize: 12, color: '#555', fontWeight: '600' },
+  avatarLetter: { color: '#fff', fontWeight: 'bold', fontSize: 20 },
+  avatarName: { fontSize: 12, color: '#555', fontWeight: '600' },
 
   checkBadge: {
     position: 'absolute', bottom: -2, right: -2,
@@ -276,10 +382,9 @@ const styles = StyleSheet.create({
     padding: 14, marginTop: 14, borderWidth: 1, borderColor: '#b2dfdb',
   },
   calcTitle: { fontWeight: 'bold', color: '#1abc9c', fontSize: 14, marginBottom: 8 },
-  calcGrid:  { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  calcItem:  { fontSize: 13, color: '#444', width: '45%' },
+  calcGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  calcItem: { fontSize: 13, color: '#444', width: '45%' },
 
-  // Linha com os dois botões lado a lado
   btnRow: {
     flexDirection: 'row',
     gap: 12,
@@ -308,5 +413,6 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
     alignItems: 'center',
   },
+  btnSaveDisabled: { opacity: 0.7 },
   btnSaveText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
 });
