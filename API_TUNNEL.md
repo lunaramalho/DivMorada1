@@ -1,74 +1,16 @@
-# Como rodar o app com API local e Expo Tunnel
+# Executar o DivMorada em outra rede
 
-Todas as requisicoes do app passam por `src/services/api.ts`.
-Voce nao precisa alterar `login`, `users`, `despesas`, `pagamentos` etc. Basta configurar a URL base da API.
+O backend atual é o Supabase. Não é necessário executar uma API local na porta 5000 nem configurar EXPO_PUBLIC_API_URL.
 
-## 1. Rodar a API
-
-Em um terminal:
+Após configurar o .env e instalar as dependências:
 
 ```powershell
-cd C:\Users\Matheus\Documents\api-devmoradia\api
-npm run dev
-```
-
-A API precisa estar na porta `5000`.
-
-## 2. Criar tunnel para a API
-
-Em outro terminal:
-
-```powershell
-ngrok http 5000
-```
-
-Copie a URL HTTPS gerada, por exemplo:
-
-```text
-https://abc123.ngrok-free.app
-```
-
-Nao coloque `:5000` no final da URL do ngrok.
-
-## 3. Configurar a URL no app
-
-Crie um arquivo `.env.local` na pasta `DivMorada`:
-
-```powershell
-cd C:\Users\Matheus\Documents\api-devmoradia\DivMorada
-copy .env.example .env.local
-```
-
-Abra `.env.local` e troque pela URL real:
-
-```env
-EXPO_PUBLIC_API_URL=https://abc123.ngrok-free.app
-```
-
-## 4. Rodar o Expo
-
-Na pasta `DivMorada`:
-
-```powershell
+npx expo login
 npm run start:tunnel
 ```
 
-ou:
+Use a mesma conta Expo no computador e no Expo Go do iPhone. Leia o novo QR code do terminal e mantenha o servidor ligado.
 
-```powershell
-npx expo start --tunnel --clear
-```
+O túnel exige internet e pode ser bloqueado pela rede do local. Ao mudar de túnel, revise os retornos de recuperação de senha no Supabase e, para a versão web pública, a origem permitida na função de cobrança.
 
-## Quando a URL do ngrok mudar
-
-Atualize apenas o arquivo `.env.local`:
-
-```env
-EXPO_PUBLIC_API_URL=https://nova-url.ngrok-free.app
-```
-
-Depois reinicie o Expo com cache limpo:
-
-```powershell
-npm run start:tunnel
-```
+O passo a passo completo está no [README](README.md).

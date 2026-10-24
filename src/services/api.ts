@@ -214,6 +214,21 @@ export type Historico = {
 };
 
 export const authService = {
+  async restoreSession() {
+    const { data: stored, error: storedError } = await supabase.auth.getSession();
+    if (storedError) throw storedError;
+    if (!stored.session) { session.clear(); return; }
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data.user) {
+      if (error && error.status !== 401 && error.status !== 403) throw error;
+      session.clear();
+      return;
+    }
+    const profile = await ensureUsuarioProfile(data.user);
+    const house = await getLatestResidenciaForUser(profile.id);
+    session.setAuth(stored.session.access_token, profile);
+    session.setResidencia(house);
+  },
   async login(email: string, senha: string) {
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email,
@@ -221,6 +236,9 @@ export const authService = {
     });
 
     if (authError) {
+      if (authError.code === 'invalid_credentials' || /invalid login credentials/i.test(authError.message)) {
+        throwMessage('E-mail ou senha inválidos.');
+      }
       throwMessage(authError.message || 'Email ou senha invalidos!');
     }
 
@@ -257,27 +275,38 @@ export const authService = {
     };
   },
 
-  async register(nome: string, email: string, senha: string, fotoUrl?: string | null) {
+  async register(nome: string, email: string, senha: string, fotoUrl?: string | null, photo?: { base64?: string | null; mimeType?: string | null }) {
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password: senha,
       options: {
         data: {
           nome,
-          fotoUrl,
+          fotoUrl: null,
         },
       },
     });
 
     if (authError) {
       const isDuplicate = authError.message.toLowerCase().includes('already');
-      throwMessage(isDuplicate ? 'Email ja cadastrado!' : authError.message);
+      throwMessage(isDuplicate ? 'E-mail já cadastrado.' : authError.message);
     }
 
     assertData(authData.user, 'Nao foi possivel criar o usuario.');
 
+    let photoSaved = !fotoUrl;
+    if (fotoUrl && authData.session && authData.user) {
+      try {
+        const { url } = await uploadService.avatar({ uri: fotoUrl, base64: photo?.base64, mimeType: photo?.mimeType });
+        await ensureUsuarioProfile(authData.user);
+        await usuarioService.update(authData.user.id, { fotoUrl: url });
+        photoSaved = true;
+      } catch { /* Account was created; offer a retry in Profile rather than another signup. */ }
+    }
+
     return {
       message: `Usuario ${nome} criado com sucesso!`,
+      photoSaved,
     };
   },
 };
@@ -295,12 +324,12 @@ export const usuarioService = {
 
   async update(
     id: string,
-    payload: Partial<Pick<Usuario, 'nome' | 'email' | 'fotoUrl' | 'isActive'>> & { senha?: string },
+    payload: Partial<Pick<Usuario, 'nome' | 'email' | 'fotoUrl' | 'isActive'>> & { senha?: string; senhaAtual?: string },
   ) {
-    const { senha, ...profilePayload } = payload;
+    const { senha, senhaAtual, ...profilePayload } = payload;
 
     if (senha) {
-      const { error } = await supabase.auth.updateUser({ password: senha });
+      const { error } = await supabase.auth.updateUser({ password: senha, ...(senhaAtual ? { current_password: senhaAtual } : {}) });
 
       if (error) {
         normalizeError(error, 'Nao foi possivel atualizar a senha.');
@@ -345,12 +374,8 @@ export const residenciaService = {
     return (data ?? []) as Residencia[];
   },
 
-  async getByCodigo(codigo: string) {
-    const { data, error } = await supabase
-      .from('residencias')
-      .select('*')
-      .eq('codigo', codigo)
-      .maybeSingle();
+  async joinByCodigo(codigo: string) {
+    const { data, error } = await supabase.rpc('join_house_by_code', { p_code: codigo });
 
     if (error) {
       normalizeError(error, 'Nao foi possivel buscar residencia.');
@@ -629,6 +654,18 @@ export const pagamentoService = {
 };
 
 export const uploadService = {
+  async avatar(file: { uri: string; base64?: string | null; mimeType?: string | null }) {
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) throwMessage('Entre na conta antes de enviar a foto.');
+    const contentType = file.mimeType ?? 'image/jpeg';
+    const extension = contentType === 'image/png' ? 'png' : contentType === 'image/webp' ? 'webp' : contentType === 'image/heic' ? 'heic' : 'jpg';
+    const bytes = file.base64 ? decode(file.base64) : await (await fetch(file.uri)).arrayBuffer();
+    if (!bytes.byteLength || bytes.byteLength > 5 * 1024 * 1024) throwMessage('Escolha uma foto de até 5 MB.');
+    const path = `avatares/${user!.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`;
+    const { error } = await supabase.storage.from('comprovantes').upload(path, bytes, { contentType, upsert: false });
+    if (error) normalizeError(error, 'Não foi possível enviar a foto. Tente novamente.');
+    return { url: supabase.storage.from('comprovantes').getPublicUrl(path).data.publicUrl };
+  },
   async comprovante(file: {
     uri: string;
     name?: string | null;
@@ -673,23 +710,18 @@ export const uploadService = {
 
 export const notificacaoService = {
   async enviarCobranca(pagamentoId: string) {
-    const pagamentos = await pagamentoService.list();
-    const pagamento = pagamentos.find(item => item.id === pagamentoId) ?? null;
-
-    if (!pagamento) {
-      throwMessage('Pagamento nao encontrado!');
-    }
-
-    await historicoService.create({
-      residenciaId: pagamento.residenciaId,
-      usuarioId: pagamento.despesa?.criadoPorId ?? null,
-      acao: 'Cobranca enviada',
-      descricao: `${pagamento.usuario?.nome ?? 'Morador'} - R$ ${Number(pagamento.valor).toFixed(2)}`,
+    const { data, error } = await supabase.functions.invoke('send-charge-email', {
+      body: { pagamentoId },
     });
-
-    return {
-      message: 'Cobranca registrada com sucesso!',
-    };
+    if (error) {
+      let message = 'Nao foi possivel enviar a cobranca. Confira a configuracao de e-mail.';
+      if (error.context instanceof Response) {
+        try { message = (await error.context.json()).message || message; } catch { /* Keep a readable fallback. */ }
+      }
+      throwMessage(message);
+    }
+    if (!data?.providerId || !data?.acceptedAt) throwMessage('O servico nao confirmou a aceitacao do envio.');
+    return data as { message: string; providerId: string; acceptedAt: string };
   },
 };
 

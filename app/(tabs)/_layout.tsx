@@ -30,8 +30,8 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Início',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="home-outline" size={size} color={color} />
+          tabBarIcon: ({ focused, size }) => (
+            <MaterialCommunityIcons name="home-outline" size={size} color={focused ? PRIMARY : INACTIVE} />
           ),
         }}
       />
@@ -39,8 +39,8 @@ export default function TabLayout() {
         name="house"
         options={{
           title: 'Casa',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="office-building-outline" size={size} color={color} />
+          tabBarIcon: ({ focused, size }) => (
+            <MaterialCommunityIcons name="office-building-outline" size={size} color={focused ? PRIMARY : INACTIVE} />
           ),
         }}
       />
@@ -48,8 +48,8 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: 'Perfil',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="account-outline" size={size} color={color} />
+          tabBarIcon: ({ focused, size }) => (
+            <MaterialCommunityIcons name="account-outline" size={size} color={focused ? PRIMARY : INACTIVE} />
           ),
         }}
       />

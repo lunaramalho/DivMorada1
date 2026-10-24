@@ -1,0 +1,2 @@
+[functions.send-charge-email]
+verify_jwt = true
