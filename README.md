@@ -67,6 +67,10 @@ npm run web
 
 Abra `http://localhost:8081`. Se a CLI escolher outra porta, use o endereço informado e revise as configurações dependentes da origem web.
 
+O fluxo de **Confirmações e parcelamento** requer a migração `supabase/migrations/202611080001_payment_requests.sql`, após a migração de cobranças. Veja as regras, a ativação e o roteiro de teste em [parcelamento e confirmações](docs/parcelamento-e-confirmacoes.md).
+
+A **saída de moradores e proteção dos comprovantes** requer, na sequência, `supabase/migrations/202611090001_house_departure.sql`. Ela torna o armazenamento privado e exige o aplicativo atualizado. Veja [saída de moradores](docs/saida-de-moradores.md) para aplicação e testes; não reaplique o esquema base, que contém permissões antigas.
+
 ## 4. Rodar no iPhone ou Android
 
 Entre na conta Expo no computador:
@@ -137,7 +141,7 @@ Para um projeto Supabase novo:
 5. Confira o bucket `comprovantes` e as políticas de Storage criadas pelo esquema. Comprovantes usam o prefixo `comprovantes/`; fotos de perfil usam `avatares/<usuario>/`.
 6. Configure as URLs de autenticação e a função de cobrança, se utilizada.
 
-O bucket atual é público. Antes de disponibilizar dados pessoais fora do contexto de demonstração, revise os requisitos de privacidade e o modelo de acesso aos arquivos.
+O esquema base cria o bucket público. A migração de saída de moradores o torna privado e restringe o acesso aos arquivos; aplique as migrações na ordem documentada antes de usar o novo fluxo.
 
 ## 7. Cobranças com Resend
 

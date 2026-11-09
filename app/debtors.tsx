@@ -4,13 +4,17 @@ import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } 
 import { DebtPaymentCard } from '@/features/debts/components/DebtPaymentCard';
 import { DebtsStatus } from '@/features/debts/components/DebtsStatus';
 import { useDebts } from '@/features/debts/hooks/useDebts';
+import { useState } from 'react';
+import { InstallmentReview } from '@/features/debts/components/InstallmentReview';
 
 export default function DebtorsScreen() {
   const {
     router, debts, loading, refreshing, updatingId,
     handleRefresh, confirmPayment, handleAttach,
     selectedPayment, receipts, paymentError, removeReceipt, closePayment, handleConfirmPayment,
+    requests, loadError, installmentPayment, setInstallmentPayment, submitInstallment, cancelRequest,
   } = useDebts();
+  const [menuId, setMenuId] = useState<string | null>(null);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -26,22 +30,28 @@ export default function DebtorsScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.pageTitle}>Dividas a Pagar</Text>
+        <Text style={styles.pageTitle}>Dívidas a Pagar</Text>
 
-        {loading || debts.length === 0 ? (
+        {loadError ? <View><Text accessibilityRole="alert" style={styles.error}>{loadError}</Text><TouchableOpacity onPress={handleRefresh} style={styles.retry}><Text>Tentar novamente</Text></TouchableOpacity></View> : loading || debts.length === 0 ? (
           <DebtsStatus loading={loading} />
         ) : (
           debts.map(payment => (
             <DebtPaymentCard
               key={payment.id}
               payment={payment}
-              isUpdating={updatingId === payment.id}
+              isUpdating={!!updatingId}
               onPay={confirmPayment}
               onAttach={handleAttach}
+              request={requests.find(request => request.pagamentoId === payment.id)}
+              menuOpen={menuId === payment.id}
+              onMenu={setMenuId}
+              onInstallment={setInstallmentPayment}
+              onCancel={cancelRequest}
             />
           ))
         )}
       </ScrollView>
+      {installmentPayment && <InstallmentReview key={installmentPayment.id} payment={installmentPayment} busy={!!updatingId} onClose={() => { if (!updatingId) setInstallmentPayment(null); }} onSubmit={submitInstallment} />}
       {selectedPayment && (
         <PaymentReview
           key={selectedPayment.id}
@@ -78,4 +88,5 @@ const styles = StyleSheet.create({
 
   content: { padding: 16, paddingBottom: 32 },
   pageTitle: { fontSize: 20, fontWeight: 'bold', color: '#333', marginBottom: 18 },
+  error: { color: '#b33229', marginBottom: 12 }, retry: { padding: 16, backgroundColor: '#fff', borderRadius: 8, alignItems: 'center' },
 });

@@ -6,6 +6,7 @@ import { appAlert as Alert } from '@/components/appAlert';
 import { getApiErrorMessage, pagamentoService, uploadService } from '@/services/api';
 import { session } from '@/services/session';
 import type { DebtPayment } from '../types';
+import { paymentRequests, type PaymentRequest } from '@/services/paymentRequests';
 
 export function useDebts() {
   const router = useRouter();
@@ -13,6 +14,9 @@ export function useDebts() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [requests, setRequests] = useState<PaymentRequest[]>([]);
+  const [loadError, setLoadError] = useState('');
+  const [installmentPayment, setInstallmentPayment] = useState<DebtPayment | null>(null);
 
   const [selectedPayment, setSelectedPayment] = useState<DebtPayment | null>(null);
   const [receipts, setReceipts] = useState<Record<string, DocumentPicker.DocumentPickerAsset>>({});
@@ -29,11 +33,13 @@ export function useDebts() {
     }
 
     try {
-      const pagamentos = await pagamentoService.list({
+      setLoadError('');
+      const [pagamentos, requestData] = await Promise.all([pagamentoService.list({
         residenciaId: residencia.id,
         usuarioId: user.id,
         status: 'PENDENTE',
-      });
+      }), paymentRequests.list(residencia.id, false)]);
+      setRequests(requestData.filter(request => request.devedorId === user.id));
 
       setDebts(
         (pagamentos as DebtPayment[]).filter(
@@ -41,10 +47,7 @@ export function useDebts() {
         ),
       );
     } catch (error: any) {
-      Alert.alert(
-        'Erro ao carregar dividas',
-        getApiErrorMessage(error, 'Nao foi possivel carregar suas dividas.'),
-      );
+      setLoadError(getApiErrorMessage(error, 'Não foi possível carregar suas dívidas.'));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -106,11 +109,7 @@ export function useDebts() {
       const upload = file ? await uploadService.comprovante({
         uri: file.uri, name: file.name, mimeType: file.mimeType,
       }) : undefined;
-      await pagamentoService.update(payment.id, {
-        status: 'CONFIRMADO',
-        ...(upload ? { comprovanteUrl: upload.url } : {}),
-        pagoEm: new Date().toISOString(),
-      });
+      await paymentRequests.create(payment.id, 'PAGAMENTO', { receipt: upload?.url });
       setSelectedPayment(null);
       setReceipts(previous => {
         const next = { ...previous };
@@ -118,17 +117,42 @@ export function useDebts() {
         return next;
       });
       await loadDebts();
-      if (Platform.OS === 'web') window.alert('Pagamento marcado como confirmado.');
-      else Alert.alert('Pronto', 'Pagamento marcado como confirmado.');
+      if (Platform.OS === 'web') window.alert('Pagamento informado. Aguardando confirmação do credor.');
+      else Alert.alert('Pronto', 'Pagamento informado. Aguardando confirmação do credor.');
     } catch (error: any) {
-      setPaymentError(getApiErrorMessage(error, 'Nao foi possivel confirmar o pagamento. Tente novamente.'));
+      setPaymentError(getApiErrorMessage(error, 'Não foi possível informar o pagamento. Tente novamente.'));
     } finally {
       setUpdatingId(null);
     }
   };
 
+  const submitInstallment = async (count: number, first: string) => {
+    if (!installmentPayment || updatingId) return;
+    setUpdatingId(installmentPayment.id);
+    try {
+      await paymentRequests.create(installmentPayment.id, 'PARCELAMENTO', { count, first });
+      setInstallmentPayment(null);
+      await loadDebts();
+      Alert.alert('Solicitação enviada', 'O credor poderá analisar as parcelas em Confirmações.');
+    } finally { setUpdatingId(null); }
+  };
+
+  const cancelRequest = (request: PaymentRequest) => {
+    if (updatingId) return;
+    Alert.alert('Cancelar solicitação?', 'A dívida continuará no saldo e ficará disponível para um novo registro.', [
+      { text: 'Voltar', style: 'cancel' },
+      { text: 'Cancelar solicitação', onPress: async () => {
+        setUpdatingId(request.pagamentoId);
+        try { await paymentRequests.resolve(request.id, 'CANCELADA'); await loadDebts(); }
+        catch (error: any) { Alert.alert('Não foi possível cancelar', getApiErrorMessage(error, 'Atualize a página e tente novamente.')); }
+        finally { setUpdatingId(null); }
+      } },
+    ]);
+  };
+
   return {
     router, debts, loading, refreshing, updatingId, handleRefresh, confirmPayment, handleAttach,
     selectedPayment, receipts, paymentError, removeReceipt, closePayment, handleConfirmPayment,
+    requests, loadError, installmentPayment, setInstallmentPayment, submitInstallment, cancelRequest,
   };
 }

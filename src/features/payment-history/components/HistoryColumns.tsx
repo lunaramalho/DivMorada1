@@ -18,6 +18,7 @@ export function HistoryColumns({ paid, received, onOpen, totals = true }: { paid
       {column.items.map(payment => <View key={payment.id} style={[styles.card, column.outgoing ? styles.paidCard : styles.receivedCard]}>
         <Text style={styles.name}>{payment.despesa?.nome ?? 'Despesa indisponível'}</Text>
         <Text style={styles.value}>{money(payment.valor)}</Text>
+        {payment.numeroParcela != null && <Text style={styles.detail}>Parcela {payment.numeroParcela}/{payment.totalParcelas}</Text>}
         <Text style={styles.detail}>{column.outgoing ? 'Para: ' : 'De: '}{column.outgoing ? payment.despesa?.criadoPor?.nome ?? 'Credor indisponível' : payment.usuario?.nome ?? 'Morador indisponível'}</Text>
         <Text style={styles.detail}>{payment.pagoEm && Number.isFinite(new Date(payment.pagoEm).getTime()) ? new Date(payment.pagoEm).toLocaleDateString('pt-BR') : 'Sem data registrada'}</Text>
         {payment.comprovanteUrl ? <Pressable accessibilityRole="button" accessibilityLabel={`Ver comprovante de ${payment.despesa?.nome ?? 'pagamento'}`} onPress={() => onOpen(payment.comprovanteUrl!)} style={styles.linkButton}><Text style={styles.link}>Ver comprovante</Text></Pressable> : <Text style={styles.empty}>Sem comprovante</Text>}

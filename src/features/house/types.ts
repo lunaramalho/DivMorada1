@@ -1,5 +1,6 @@
 export type Resident = {
   id: string;
+  usuarioId: string;
   name: string;
   role: 'Administrador' | 'Membro';
   avatarLetter: string;

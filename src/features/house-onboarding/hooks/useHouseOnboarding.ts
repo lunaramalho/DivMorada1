@@ -1,6 +1,5 @@
 import {
   residenciaService,
-  residenciaUsuarioService,
   getApiErrorMessage,
 } from '@/services/api';
 import { session } from '@/services/session';
@@ -63,7 +62,6 @@ export function useHouseOnboarding() {
     try {
       const { residencia } = await residenciaService.create(houseName.trim());
 
-      await residenciaUsuarioService.create(residencia.id, user.id, 'dono');
       session.setResidencia(residencia);
       Alert.alert('Casa criada!', `"${residencia.nome}" foi criada. Codigo: ${residencia.codigo}`, [
         { text: 'OK', onPress: () => router.replace('/(tabs)') },

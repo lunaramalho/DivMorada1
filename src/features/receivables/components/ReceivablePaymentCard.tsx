@@ -1,5 +1,6 @@
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { ReceivablePayment } from '../types';
+import { displayDate } from '@/features/debts/installments';
 
 type Props = {
   item: ReceivablePayment;
@@ -41,6 +42,7 @@ export function ReceivablePaymentCard({ item, isUpdating, isSendingCharge, onMar
         <Text style={styles.amount}>{formatCurrency(item.valor)}</Text>
       </View>
 
+      {item.numeroParcela != null && <Text style={styles.installment}>Parcela {item.numeroParcela}/{item.totalParcelas} · Vencimento: {item.vencimento ? displayDate(item.vencimento) : '—'}</Text>}
       <View style={styles.actions}>
         <TouchableOpacity
           style={[styles.actionButton, styles.btnMark, isUpdating && styles.btnDisabled]}
@@ -92,6 +94,7 @@ const styles = StyleSheet.create({
   name: { fontSize: 15, fontWeight: '700', color: '#222' },
   category: { fontSize: 12, color: '#888', marginTop: 2 },
   amount: { fontSize: 16, fontWeight: 'bold', color: '#222' },
+  installment: { color: '#68716d', fontSize: 12, marginBottom: 12 },
 
   actions: { flexDirection: 'row', gap: 8 },
   actionButton: {

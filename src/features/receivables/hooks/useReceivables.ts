@@ -66,10 +66,7 @@ export function useReceivables() {
     const markReceived = async () => {
       setUpdatingId(payment.id);
       try {
-        await pagamentoService.update(payment.id, {
-          status: 'CONFIRMADO',
-          pagoEm: new Date().toISOString(),
-        });
+        await pagamentoService.confirmReceipt(payment.id);
         await loadReceivables();
         if (Platform.OS === 'web') window.alert('Pagamento marcado como recebido.');
         else Alert.alert('Pronto', 'Pagamento marcado como recebido.');

@@ -9,6 +9,7 @@ export default function TabLayout() {
   if (!session.getUser()) {
     return <Redirect href="/(auth)/login" />;
   }
+  if (!session.getResidencia()) return <Redirect href="/(auth)/join-house" />;
 
   return (
     <Tabs

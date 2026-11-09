@@ -3,9 +3,10 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 import { HouseResidentRow } from '@/features/house/components/HouseResidentRow';
 import { HouseInviteCode } from '@/features/house/components/HouseInviteCode';
 import { useHouse } from '@/features/house/hooks/useHouse';
+import { DeparturePendingModal } from '@/features/house/components/DeparturePendingModal';
 
 export default function HouseScreen() {
-  const { router, residents, residencia, loading, canManage, handleCopyCode, handleConfirm, handleDelete } = useHouse();
+  const { router, residents, residencia, loading, canManage, canLeave, leaving, blocker, setBlocker, handleLeave, handleCopyCode, handleDelete } = useHouse();
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -33,10 +34,14 @@ export default function HouseScreen() {
             key={r.id}
             resident={r}
             canManage={canManage}
-            onConfirm={handleConfirm}
+            busy={leaving}
             onDelete={handleDelete}
           />
         ))}
+
+        {!loading && canLeave && <TouchableOpacity accessibilityRole="button" disabled={leaving} onPress={handleLeave} style={[styles.btnLeave, leaving && styles.disabled]}>
+          <Text style={styles.btnLeaveText}>{leaving ? 'Verificando...' : 'Sair da residência'}</Text>
+        </TouchableOpacity>}
 
         {residencia && (
           <HouseInviteCode code={residencia.codigo} onCopy={handleCopyCode} />
@@ -49,6 +54,7 @@ export default function HouseScreen() {
           <Text style={styles.btnAddExpenseText}>Adicionar Nova Despesa </Text>
         </TouchableOpacity>
       </ScrollView>
+      {blocker && <DeparturePendingModal {...blocker} onClose={() => setBlocker(null)} onNavigate={path => { setBlocker(null); router.push(path); }} />}
     </SafeAreaView>
   );
 }
@@ -69,6 +75,7 @@ const styles = StyleSheet.create({
   },
   houseNameText: { fontWeight: '700', color: '#333', fontSize: 13, letterSpacing: 0.5 },
   emptyText: { color: '#888', marginBottom: 14 },
+  btnLeave: { paddingVertical: 14, marginBottom: 16, alignItems: 'center' }, btnLeaveText: { color: '#c0392b', fontSize: 14, fontWeight: '600' }, disabled: { opacity: 0.5 },
 
   btnAddExpense: {
     backgroundColor: '#1abc9c', borderRadius: 14,

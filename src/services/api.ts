@@ -74,8 +74,6 @@ const toUsuario = (item: any): Usuario => ({
   updatedAt: item.updatedAt,
 });
 
-const generateCode = () => Math.random().toString(36).substring(2, 8).toUpperCase();
-
 const ensureUsuarioProfile = async (authUser: {
   id: string;
   email?: string;
@@ -165,6 +163,7 @@ export type ResidenciaUsuario = {
   role: 'dono' | 'membro';
   ativo: boolean;
   joinedAt: string;
+  leftAt?: string | null;
 };
 
 export type Despesa = {
@@ -194,6 +193,10 @@ export type Pagamento = {
   observacao?: string | null;
   pagoEm?: string | null;
   createdAt: string;
+  pagamentoOriginalId?: string | null;
+  numeroParcela?: number | null;
+  totalParcelas?: number | null;
+  vencimento?: string | null;
   despesa?: (Despesa & { criadoPor?: Usuario }) | null;
   usuario?: Usuario;
 };
@@ -385,27 +388,9 @@ export const residenciaService = {
   },
 
   async create(nome: string, descricao?: string) {
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const codigo = generateCode();
-      const { data, error } = await supabase
-        .from('residencias')
-        .insert({ nome, descricao, codigo })
-        .select('*')
-        .single();
-
-      if (!error) {
-        return {
-          message: `Residencia ${data.nome} criada com sucesso!`,
-          residencia: data as Residencia,
-        };
-      }
-
-      if (error.code !== '23505') {
-        normalizeError(error, 'Nao foi possivel criar residencia.');
-      }
-    }
-
-    throwMessage('Nao foi possivel gerar um codigo unico para a residencia.');
+    const { data, error } = await supabase.rpc('create_house', { p_name: nome, p_description: descricao ?? null });
+    if (error) normalizeError(error, 'Não foi possível criar a residência.');
+    return { message: 'Residência criada!', residencia: data as Residencia };
   },
 
   async update(id: string, payload: Partial<Pick<Residencia, 'nome' | 'descricao'>>) {
@@ -427,6 +412,11 @@ export const residenciaService = {
   },
 };
 
+export type DeparturePending = {
+  aPagar: number; aReceber: number; valorAPagar: number; valorAReceber: number;
+  parcelas: number; pagamentosEmAnalise: number; parcelamentosEmAnalise: number;
+};
+
 export const residenciaUsuarioService = {
   async list() {
     const { data, error } = await supabase
@@ -441,60 +431,15 @@ export const residenciaUsuarioService = {
     return (data ?? []) as ResidenciaUsuario[];
   },
 
-  async create(residenciaId: string, usuarioId: string, role: 'dono' | 'membro' = 'membro') {
-    const { data, error } = await supabase
-      .from('residencia_usuarios')
-      .insert({
-        residenciaId,
-        usuarioId,
-        role,
-        ativo: true,
-      })
-      .select('*')
-      .single();
-
-    if (error) {
-      if (error.code === '23505') {
-        throwMessage('Usuario ja cadastrado nesta residencia!');
-      }
-
-      normalizeError(error, 'Nao foi possivel cadastrar morador.');
-    }
-
-    return {
-      message: 'Morador cadastrado com sucesso!',
-      residenciaUsuario: data as ResidenciaUsuario,
-    };
+  async pending(residenciaId: string, usuarioId: string) {
+    const { data, error } = await supabase.rpc('house_departure_pending', { p_house: residenciaId, p_user: usuarioId });
+    if (error) normalizeError(error, 'Não foi possível verificar as pendências.');
+    return data as DeparturePending;
   },
-
-  async update(id: string, payload: Partial<Pick<ResidenciaUsuario, 'role' | 'ativo'>>) {
-    const { data, error } = await supabase
-      .from('residencia_usuarios')
-      .update(payload)
-      .eq('id', id)
-      .select('*')
-      .single();
-
-    if (error) {
-      normalizeError(error, 'Nao foi possivel atualizar morador.');
-    }
-
-    return {
-      message: 'Morador atualizado com sucesso!',
-      residenciaUsuario: data as ResidenciaUsuario,
-    };
-  },
-
-  async delete(id: string) {
-    const { error } = await supabase.from('residencia_usuarios').delete().eq('id', id);
-
-    if (error) {
-      normalizeError(error, 'Nao foi possivel remover morador.');
-    }
-
-    return {
-      message: 'Morador excluido com sucesso!',
-    };
+  async depart(residenciaId: string, usuarioId: string) {
+    const { data, error } = await supabase.rpc('depart_house', { p_house: residenciaId, p_user: usuarioId });
+    if (error) normalizeError(error, 'Não foi possível encerrar a participação.');
+    return data as { ok: boolean; pendencias: DeparturePending };
   },
 };
 
@@ -522,48 +467,12 @@ export const despesaService = {
     status?: 'PENDENTE' | 'PAGA' | 'CANCELADA';
     participantesIds?: string[];
   }) {
-    const { participantesIds, ...despesaPayload } = payload;
-    const { data: despesa, error } = await supabase
-      .from('despesas')
-      .insert(despesaPayload)
-      .select('*')
-      .single();
-
-    if (error) {
-      normalizeError(error, 'Nao foi possivel criar despesa.');
-    }
-
-    const participantesUnicos = [...new Set(participantesIds ?? [])];
-    const devedores = participantesUnicos.filter(usuarioId => usuarioId !== payload.criadoPorId);
-
-    if (devedores.length > 0 && participantesUnicos.length > 0) {
-      const totalCentavos = Math.round(Number(payload.valorTotal) * 100);
-      const valorPorPessoa = totalCentavos / participantesUnicos.length / 100;
-      const { error: pagamentosError } = await supabase.from('pagamentos').insert(
-        devedores.map(usuarioId => ({
-          residenciaId: payload.residenciaId,
-          despesaId: despesa.id,
-          usuarioId,
-          valor: valorPorPessoa,
-          status: 'PENDENTE',
-        })),
-      );
-
-      if (pagamentosError) {
-        normalizeError(pagamentosError, 'Despesa criada, mas nao foi possivel dividir os pagamentos.');
-      }
-    }
-
-    const { error: historicoError } = await supabase.from('historicos').insert({
-      residenciaId: payload.residenciaId,
-      usuarioId: payload.criadoPorId,
-      acao: 'Despesa criada',
-      descricao: `${payload.nome} - R$ ${Number(payload.valorTotal).toFixed(2)}`,
+    const { data: despesa, error } = await supabase.rpc('create_shared_expense', {
+      p_house: payload.residenciaId, p_creditor: payload.criadoPorId,
+      p_name: payload.nome, p_total: payload.valorTotal,
+      p_participants: payload.participantesIds ?? [], p_description: payload.descricao ?? null, p_type: payload.tipo,
     });
-
-    if (historicoError) {
-      normalizeError(historicoError, 'Despesa criada, mas nao foi possivel salvar o historico.');
-    }
+    if (error) normalizeError(error, 'Não foi possível criar a despesa.');
 
     return {
       message: `Despesa ${despesa.nome} criada com sucesso!`,
@@ -634,22 +543,10 @@ export const pagamentoService = {
     return (data ?? []) as Pagamento[];
   },
 
-  async update(id: string, payload: Partial<Pick<Pagamento, 'status' | 'comprovanteUrl' | 'observacao' | 'pagoEm'>>) {
-    const { data, error } = await supabase
-      .from('pagamentos')
-      .update(payload)
-      .eq('id', id)
-      .select('*')
-      .single();
-
-    if (error) {
-      normalizeError(error, 'Nao foi possivel atualizar pagamento.');
-    }
-
-    return {
-      message: 'Pagamento atualizado com sucesso!',
-      pagamento: data as Pagamento,
-    };
+  async confirmReceipt(id: string) {
+    const { data, error } = await supabase.rpc('confirm_direct_receipt', { p_payment: id });
+    if (error) normalizeError(error, 'Não foi possível confirmar o recebimento.');
+    return data as Pagamento;
   },
 };
 
@@ -671,10 +568,12 @@ export const uploadService = {
     name?: string | null;
     mimeType?: string | null;
   }) {
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) throwMessage('Entre na conta antes de enviar o comprovante.');
     const fileName = file.name ?? `comprovante-${Date.now()}`;
     const mimeType = file.mimeType ?? 'application/octet-stream';
     const extension = fileName.includes('.') ? fileName.split('.').pop() : 'bin';
-    const storagePath = `comprovantes/${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`;
+    const storagePath = `comprovantes/${user.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`;
     const response = await fetch(file.uri);
     const blob = await response.blob();
     const reader = new FileReader();

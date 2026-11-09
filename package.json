@@ -11,7 +11,7 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/app-alert.test.mjs tests/auth-session.test.mjs tests/password-recovery.test.mjs tests/native-recovery.test.mjs tests/stored-photo.test.mjs",
+    "test": "node --test tests/app-alert.test.mjs tests/auth-session.test.mjs tests/password-recovery.test.mjs tests/native-recovery.test.mjs tests/stored-photo.test.mjs tests/installments.test.mjs tests/payment-requests.test.mjs tests/house-departure.test.mjs tests/protected-storage.test.mjs",
     "test:email": "node tests/charge-email.test.mjs"
   },
   "dependencies": {

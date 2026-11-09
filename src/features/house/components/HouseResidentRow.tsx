@@ -6,11 +6,11 @@ import type { Resident } from '../types';
 type Props = {
   resident: Resident;
   canManage: boolean;
-  onConfirm: (id: string) => void;
+  busy?: boolean;
   onDelete: (id: string, name: string) => void;
 };
 
-export function HouseResidentRow({ resident, canManage, onConfirm, onDelete }: Props) {
+export function HouseResidentRow({ resident, canManage, busy, onDelete }: Props) {
   return (
     <View style={styles.residentRow}>
       <View style={[styles.avatar, { backgroundColor: resident.avatarColor }]}>
@@ -30,21 +30,15 @@ export function HouseResidentRow({ resident, canManage, onConfirm, onDelete }: P
       </View>
 
       {canManage && resident.role !== 'Administrador' && <View style={styles.residentActions}>
-        {!resident.confirmed ? (
-          <TouchableOpacity
-            style={styles.btnConfirm}
-            onPress={() => onConfirm(resident.id)}
-          >
-            <Text style={styles.btnConfirmText}>Confirmar Novo</Text>
-          </TouchableOpacity>
-        ) : (
           <TouchableOpacity
             style={styles.iconBtn}
+            accessibilityRole="button"
+            accessibilityLabel={`Remover ${resident.name} da residência`}
+            disabled={busy}
             onPress={() => onDelete(resident.id, resident.name)}
           >
             <MaterialCommunityIcons name="trash-can-outline" size={20} color="#e74c3c" />
           </TouchableOpacity>
-        )}
       </View>}
     </View>
   );

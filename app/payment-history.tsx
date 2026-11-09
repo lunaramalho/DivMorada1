@@ -4,6 +4,7 @@ import { ActivityIndicator, Linking, Pressable, RefreshControl, ScrollView, Styl
 import { HistoryColumns } from '@/features/payment-history/components/HistoryColumns';
 import { ReceiptViewer } from '@/features/payment-history/components/ReceiptViewer';
 import { usePaymentHistory } from '@/features/payment-history/hooks/usePaymentHistory';
+import { protectedFileURL } from '@/services/protectedStorage';
 
 export default function PaymentHistoryScreen() {
   const history = usePaymentHistory();
@@ -11,9 +12,11 @@ export default function PaymentHistoryScreen() {
   const [receiptError, setReceiptError] = useState('');
   const openReceipt = async (url: string) => {
     setReceiptError('');
-    if (/\.pdf(?:[?#]|$)/i.test(url)) {
-      try { await Linking.openURL(url); } catch { setReceiptError('Não foi possível abrir o PDF.'); }
-    } else setReceipt(url);
+    try {
+      const signed = await protectedFileURL(url);
+      if (/\.pdf(?:[?#]|$)/i.test(url)) await Linking.openURL(signed);
+      else setReceipt(signed);
+    } catch (err) { setReceiptError(err instanceof Error ? err.message : 'Não foi possível abrir o comprovante.'); }
   };
   return <SafeAreaView style={styles.safe}>
     <View style={styles.header}><Pressable accessibilityRole="button" accessibilityLabel="Voltar" onPress={() => history.router.canGoBack() ? history.router.back() : history.router.replace('/profile')} style={styles.back}><Text style={styles.arrow}>‹</Text></Pressable><Text style={styles.brand}>DivMorada</Text></View>

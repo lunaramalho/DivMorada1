@@ -18,6 +18,7 @@ export default function HomeScreen() {
       <DashboardActions
         onReceivables={() => router.push('/receivables')}
         onDebts={() => router.push('/debtors')}
+        onConfirmations={() => router.push('/confirmations')}
       />
 
       <RecentActivities recentActivities={recentActivities} loading={loading} />

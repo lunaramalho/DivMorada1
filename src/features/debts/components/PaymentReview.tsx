@@ -33,9 +33,10 @@ export function PaymentReview({ payment, receipt, busy, error, onClose, onAttach
       <View style={styles.overlay}>
         <View style={styles.dialog} accessibilityViewIsModal>
           <ScrollView>
-            <Text style={styles.title}>Confirmar pagamento</Text>
+            <Text style={styles.title}>Informar pagamento</Text>
             <Text style={styles.description}>{payment.despesa?.nome ?? 'Despesa'}</Text>
             <Text style={styles.description}>Para {payment.despesa?.criadoPor?.nome ?? 'morador'} — R$ {Number(payment.valor).toFixed(2).replace('.', ',')}</Text>
+            <Text style={styles.description}>O valor continuará no seu saldo até o credor confirmar que recebeu. O comprovante é opcional.</Text>
             {receipt ? (
               <View style={styles.receipt}>
                 <Text style={styles.selected}>Comprovante selecionado</Text>
@@ -54,7 +55,7 @@ export function PaymentReview({ payment, receipt, busy, error, onClose, onAttach
             )}
             {(error || openError) ? <Text accessibilityRole="alert" style={styles.error}>{error || openError}</Text> : null}
             <Pressable accessibilityRole="button" disabled={busy} onPress={onConfirm} style={[styles.primary, busy && styles.disabled]}>
-              <Text style={styles.primaryText}>{busy ? 'Confirmando...' : 'Confirmar pagamento'}</Text>
+              <Text style={styles.primaryText}>{busy ? 'Enviando...' : 'Informar pagamento'}</Text>
             </Pressable>
             <Pressable accessibilityRole="button" disabled={busy} onPress={onClose} style={styles.secondary}><Text>Cancelar</Text></Pressable>
           </ScrollView>

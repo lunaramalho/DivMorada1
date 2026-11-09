@@ -1,10 +1,11 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-type Props = { onReceivables: () => void; onDebts: () => void };
+type Props = { onReceivables: () => void; onDebts: () => void; onConfirmations: () => void };
 
-export function DashboardActions({ onReceivables, onDebts }: Props) {
+export function DashboardActions({ onReceivables, onDebts, onConfirmations }: Props) {
   return (
+    <View>
     <View style={styles.buttonRow}>
       <TouchableOpacity
         style={[styles.actionButton, { backgroundColor: '#2ecc71' }]}
@@ -22,6 +23,11 @@ export function DashboardActions({ onReceivables, onDebts }: Props) {
         <Text style={styles.buttonText}>A Pagar</Text>
       </TouchableOpacity>
     </View>
+    <TouchableOpacity accessibilityRole="button" style={styles.confirmations} onPress={onConfirmations}>
+      <MaterialCommunityIcons name="clipboard-check-outline" size={22} color="#168f78" />
+      <Text style={styles.confirmationsText}>Confirmações</Text>
+    </TouchableOpacity>
+    </View>
   );
 }
 
@@ -37,4 +43,6 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   buttonText: { color: 'white', fontWeight: 'bold', fontSize: 14 },
+  confirmations: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#fff', borderWidth: 1, borderColor: '#b9e5d8', borderRadius: 12, padding: 14, marginTop: 12 },
+  confirmationsText: { color: '#168f78', fontWeight: '700', fontSize: 14 },
 });
