@@ -67,6 +67,8 @@ npm run web
 
 Abra `http://localhost:8081`. Se a CLI escolher outra porta, use o endereço informado e revise as configurações dependentes da origem web.
 
+A versão web usa `web.output: "single"`: as telas são renderizadas no navegador, com os dados e a autenticação no Supabase. Isso evita a etapa de renderização HTML no servidor do Expo que apresentou repetidamente o erro `Requiring unknown module "852"` durante o desenvolvimento. Se publicar o bundle web, configure o provedor para servir `index.html` também em URLs como `/payment-history`, `/confirmations` e `/reset-password` (fallback de SPA), conforme a [documentação do Expo](https://docs.expo.dev/guides/publishing-websites/).
+
 O fluxo de **Confirmações e parcelamento** requer a migração `supabase/migrations/202611080001_payment_requests.sql`, após a migração de cobranças. Veja as regras, a ativação e o roteiro de teste em [parcelamento e confirmações](docs/parcelamento-e-confirmacoes.md).
 
 A **saída de moradores e proteção dos comprovantes** requer, na sequência, `supabase/migrations/202611090001_house_departure.sql`. Ela torna o armazenamento privado e exige o aplicativo atualizado. Veja [saída de moradores](docs/saida-de-moradores.md) para aplicação e testes; não reaplique o esquema base, que contém permissões antigas.
